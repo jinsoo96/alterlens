@@ -42,7 +42,7 @@ export function decorateFace(d: DecorCtx, f: FaceView) {
   ctx.fillStyle = c(4);
   ctx.textBaseline = 'top';
   const sync = 80 + Math.floor((Math.sin(t * 1.3 + f.index) * 0.5 + 0.5) * 19);
-  ctx.fillText(`SYNC ${sync}%  ${f.jawOpen > 0.45 ? 'OVERDRIVE' : 'CHROME OK'}`, x0, y1 + fs * 0.3);
+  ctx.fillText(`SYNC ${sync}%  ${f.expr.mouthOpen > 0.45 ? 'OVERDRIVE' : 'CHROME OK'}`, x0, y1 + fs * 0.3);
 }
 
 // 저장 사진 테두리: 모서리 괄호 + 앱 이름 · 색 조합 · 시각

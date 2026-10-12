@@ -9,10 +9,16 @@ export interface FrameParams {
   time: number;
   mirror: boolean;
   glitch: number;
-  rain: number;
-  rainColor: number[];
+  particles: number; // 입자 세기(0 끔)
+  particleKind: 0 | 1 | 2; // 0 비 1 반짝이 2 꽃잎
+  particleColor: number[];
   palette: Float32Array; // 색 5개 × rgb
   post: PostFx;
+  eyesWarp: Float32Array; // 눈 8개 × (x, y, 반경, 세기)
+  jawWarp: Float32Array; // 턱 4개 × (x, y, 반경, 세기)
+  expr: Float32Array; // 대표 얼굴 표정 4개
+  faces: Float32Array; // 얼굴 4개 × (x, y, 폭, 기울기)
+  vars: Float32Array; // 색 조합별 추가 값 4개
 }
 
 export class Renderer {
@@ -25,6 +31,8 @@ export class Renderer {
   private srcTex: WebGLTexture;
   private maskTex: WebGLTexture;
   private overlayTex: WebGLTexture;
+  private backTex: WebGLTexture;
+  private hasBack = false;
   private hasMask = false;
   private maskW = 1;
   private maskH = 1;
@@ -44,6 +52,7 @@ export class Renderer {
     this.srcTex = this.texture(gl.LINEAR);
     this.maskTex = this.texture(gl.NEAREST);
     this.overlayTex = this.texture(gl.LINEAR);
+    this.backTex = this.texture(gl.LINEAR);
     gl.bindVertexArray(gl.createVertexArray());
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
   }
@@ -145,10 +154,15 @@ export class Renderer {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, w, h, 0, gl.RED, gl.UNSIGNED_BYTE, data);
   }
 
-  setOverlay(c: HTMLCanvasElement | OffscreenCanvas) {
+  /** 앞 장식은 늘, 뒤 장식은 테마가 쓸 때만 올린다(null 이면 뒤 레이어 끔). */
+  setOverlay(front: HTMLCanvasElement, back: HTMLCanvasElement | null) {
     const gl = this.gl;
     gl.bindTexture(gl.TEXTURE_2D, this.overlayTex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, front);
+    this.hasBack = !!back;
+    if (!back) return;
+    gl.bindTexture(gl.TEXTURE_2D, this.backTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, back);
   }
 
   private bind(unit: number, tex: WebGLTexture, loc: WebGLUniformLocation | null) {
@@ -176,7 +190,15 @@ export class Renderer {
       this.bind(0, this.srcTex, u.uSrc);
       this.bind(1, this.maskTex, u.uMask);
       this.bind(2, this.overlayTex, u.uOverlay);
+      this.bind(3, this.backTex, u.uBack);
+      gl.uniform1f(u.uHasBack, this.hasBack ? 1 : 0);
       gl.uniform2f(u.uTexel, 1 / this.width, 1 / this.height);
+      gl.uniform2f(u.uSrcSize, this.width, this.height);
+      gl.uniform4fv(u['uEyes[0]'], f.eyesWarp);
+      gl.uniform4fv(u['uJaws[0]'], f.jawWarp);
+      gl.uniform4fv(u.uExpr, f.expr);
+      gl.uniform4fv(u['uFaces[0]'], f.faces);
+      gl.uniform4fv(u.uVar, f.vars);
       gl.uniform2f(u.uMaskStep, 1 / this.maskW, 1 / this.maskH);
       gl.uniform1f(u.uHasMask, this.hasMask ? 1 : 0);
       gl.uniform1f(u.uMirror, f.mirror ? 1 : 0);
@@ -208,8 +230,9 @@ export class Renderer {
       gl.uniform2f(u.uRes, this.width, this.height);
       gl.uniform1f(u.uTime, f.time);
       gl.uniform1f(u.uGlitch, f.glitch);
-      gl.uniform1f(u.uRain, f.rain);
-      gl.uniform3fv(u.uRainColor, f.rainColor);
+      gl.uniform1f(u.uParticles, f.particles);
+      gl.uniform1f(u.uParticleKind, f.particleKind);
+      gl.uniform3fv(u.uParticleColor, f.particleColor);
       gl.uniform1f(u.uGlowAmt, fx.glow);
       gl.uniform1f(u.uBloomAmt, fx.bloom);
       gl.uniform1f(u.uChroma, fx.chroma);

@@ -101,7 +101,9 @@ body.photo #view { object-fit: contain; }
   padding: 6px 8px;
 }
 #styles button.on { color: var(--fg); text-shadow: 0 0 8px var(--pink), 0 0 16px var(--pink); }
-.controls { display: flex; align-items: center; justify-content: space-between; max-width: 360px; margin: 0 auto; }
+.controls { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; max-width: 380px; margin: 0 auto; }
+.side { display: flex; gap: 10px; }
+.side.end { justify-content: flex-end; }
 .round {
   width: 52px;
   height: 52px;
@@ -173,6 +175,23 @@ body.photo #view { object-fit: contain; }
 .ghost { background: transparent; border: 1px solid rgba(232, 247, 255, 0.35); color: var(--fg); }
 #splash-msg { min-height: 1.2em; margin: 4px 0 0; color: var(--pink); font-family: system-ui, sans-serif; font-size: 14px; }
 .fine { position: absolute; bottom: calc(var(--safe-b) + 18px); left: 16px; right: 16px; margin: 0; font-size: 11px; color: rgba(232, 247, 255, 0.4); font-family: system-ui, sans-serif; }
+
+#debug {
+  position: fixed;
+  top: calc(var(--safe-t) + 44px);
+  left: 8px;
+  right: 8px;
+  margin: 0;
+  padding: 8px;
+  font-size: 10px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: #b8ffda;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 8px;
+  pointer-events: none;
+  z-index: 5;
+}
 
 #preview {
   position: fixed;

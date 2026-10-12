@@ -14,6 +14,8 @@ const MODELS = {
     'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite',
   'face_landmarker.task':
     'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task',
+  'pose_landmarker_lite.task':
+    'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
 };
 const modelDir = join(root, 'public/models');
 mkdirSync(modelDir, { recursive: true });

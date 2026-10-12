@@ -1,9 +1,10 @@
 import './style.css';
 import { Overlay } from './engine/overlay';
 import { Renderer } from './engine/renderer';
+import { Scene } from './engine/scene';
 import { Vision } from './engine/vision';
 import { THEMES } from './themes';
-import { hexToRgb } from './themes/types';
+import { EXPR_NAMES, hexToRgb, type Capability, type ExprName } from './themes/types';
 
 const $ = <T extends HTMLElement>(s: string) => document.querySelector(s) as T;
 const view = $<HTMLCanvasElement>('#view');
@@ -13,13 +14,17 @@ const splashMsg = $<HTMLParagraphElement>('#splash-msg');
 const aiStatus = $<HTMLSpanElement>('#ai');
 const fpsEl = $<HTMLSpanElement>('#fps');
 const fileInput = $<HTMLInputElement>('#file');
+const snapInput = $<HTMLInputElement>('#snap');
 const chips = $<HTMLElement>('#styles');
 const themeRow = $<HTMLElement>('#themes');
 const preview = $<HTMLDivElement>('#preview');
 const previewImg = $<HTMLImageElement>('#preview-img');
+const debugEl = $<HTMLPreElement>('#debug');
 
 const LIVE_MAX = 1280;
 const PHOTO_MAX = 2048;
+const params = new URLSearchParams(location.search);
+const DEBUG = params.has('debug');
 
 const state = {
   source: null as null | 'camera' | 'photo',
@@ -28,7 +33,7 @@ const state = {
   photoDirty: false,
   theme: 0,
   variant: 0,
-  rain: true,
+  fx: true,
   glitch: true,
   hud: true,
   mod: 0,
@@ -43,20 +48,63 @@ try {
   throw e;
 }
 const overlay = new Overlay();
+const scene = new Scene();
 let vision: Vision | null = null;
-let visionLoading = false;
+let visionInit: Promise<Vision> | null = null;
 let visionBusy = false;
 let visionAt = 0;
 let visionCost = 0;
 let maskSeen = -1;
 let stream: MediaStream | null = null;
 
+// ?debug&force=smile,wink : 테마를 만들 때 표정 반응을 얼굴 없이 미리 본다
+if (DEBUG) {
+  debugEl.hidden = false;
+  for (const n of (params.get('force') ?? '').split(',')) if (EXPR_NAMES.includes(n as ExprName)) scene.force[n as ExprName] = 1;
+}
+
+const theme = () => THEMES[state.theme];
 const fit = (w: number, h: number, max: number) => {
   const s = Math.min(1, max / Math.max(w, h));
   return [Math.round(w * s), Math.round(h * s)];
 };
 
-// ---------- 소스: 카메라 / 사진 ----------
+// ---------- 인식: 테마가 고른 것만 ----------
+function needs(): Capability[] {
+  return theme().needs;
+}
+
+function ensureVision() {
+  visionInit ??= Vision.create();
+  const caps = needs();
+  aiStatus.classList.remove('on');
+  visionInit
+    .then(async (v) => {
+      if (caps.some((c) => !v.has(c))) aiStatus.textContent = 'AI 0%';
+      await v.ensure(caps, (r) => (aiStatus.textContent = `AI ${Math.round(r * 100)}%`));
+      vision = v;
+      if (caps !== needs()) return; // 그사이 테마가 바뀜
+      aiStatus.textContent = 'AI ON';
+      aiStatus.classList.add('on');
+      if (state.source === 'photo') await analyzePhoto();
+    })
+    .catch((e) => {
+      console.error(e);
+      aiStatus.textContent = 'AI OFF';
+    });
+}
+
+async function analyzePhoto() {
+  if (!vision || !state.photo) return;
+  visionBusy = true;
+  try {
+    await vision.processImage(state.photo, needs().filter((c) => vision!.has(c)));
+  } finally {
+    visionBusy = false;
+  }
+}
+
+// ---------- 소스: 앱 안 카메라 / 사진(갤러리 · 폰 기본 카메라 · 공유) ----------
 async function startCamera() {
   stopCamera();
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -77,7 +125,7 @@ function stopCamera() {
   stream = null;
 }
 
-async function openPhoto(file: File) {
+async function openPhoto(file: Blob) {
   const bmp = await createImageBitmap(file);
   const [w, h] = fit(bmp.width, bmp.height, PHOTO_MAX);
   const c = document.createElement('canvas');
@@ -91,34 +139,19 @@ async function openPhoto(file: File) {
   state.source = 'photo';
   document.body.classList.add('photo');
   hideSplash();
+  ensureVision();
   await analyzePhoto();
 }
 
-async function analyzePhoto() {
-  if (!vision || !state.photo) return;
-  visionBusy = true;
-  try {
-    await vision.processImage(state.photo);
-  } finally {
-    visionBusy = false;
-  }
-}
-
-function loadVision() {
-  if (vision || visionLoading) return;
-  visionLoading = true;
-  aiStatus.textContent = 'AI 0%';
-  Vision.create((r) => (aiStatus.textContent = `AI ${Math.round(r * 100)}%`))
-    .then(async (v) => {
-      vision = v;
-      aiStatus.textContent = 'AI ON';
-      aiStatus.classList.add('on');
-      if (state.source === 'photo') await analyzePhoto();
-    })
-    .catch((e) => {
-      console.error(e);
-      aiStatus.textContent = 'AI OFF';
-    });
+// 안드로이드 설치 앱: 폰 카메라·갤러리의 "공유 → ALTERLENS" 로 들어온 사진(sw.js 가 캐시에 넣어 둠)
+async function takeShared() {
+  if (!params.has('shared') || !('caches' in window)) return;
+  history.replaceState(null, '', location.pathname);
+  const cache = await caches.open('alterlens-share');
+  const res = await cache.match('shared-image');
+  if (!res) return;
+  await cache.delete('shared-image');
+  await openPhoto(await res.blob());
 }
 
 // ---------- 렌더 루프 ----------
@@ -130,15 +163,15 @@ let fpsN = 0;
 
 function glitchAmount(t: number) {
   if (t < flashUntil) return 1;
-  if (!state.glitch) return 0;
+  if (!state.glitch || !theme().effects.glitch) return 0;
   if (t > nextGlitch) {
     glitchUntil = t + 0.1 + Math.random() * 0.2;
     nextGlitch = t + 2 + Math.random() * 5;
   }
   let g = t < glitchUntil ? 0.5 + Math.random() * 0.5 : 0;
   // 입을 크게 벌리면 화면이 오버드라이브
-  const jaw = Math.max(0, ...(vision?.faces ?? []).map((f) => f.jawOpen));
-  if (jaw > 0.45) g = Math.max(g, Math.min(1, (jaw - 0.45) * 2.5));
+  const open = Math.max(0, ...scene.faces.map((f) => f.expr.mouthOpen));
+  if (open > 0.45) g = Math.max(g, Math.min(1, (open - 0.45) * 2.5));
   return g;
 }
 
@@ -168,7 +201,7 @@ function frame(now: number) {
     visionBusy = true;
     const t0 = performance.now();
     vision
-      .processVideo(video)
+      .processVideo(video, needs().filter((c) => vision!.has(c)))
       .catch((e) => console.error(e))
       .finally(() => {
         visionBusy = false;
@@ -176,33 +209,44 @@ function frame(now: number) {
         visionCost = visionAt - t0;
       });
   }
-  if (vision?.mask && vision.maskVersion !== maskSeen) {
-    renderer.setMask(vision.mask, vision.maskW, vision.maskH);
-    maskSeen = vision.maskVersion;
+  const th = theme();
+  const mask = th.needs.includes('parts') ? vision?.mask : null;
+  if (mask && vision!.maskVersion !== maskSeen) {
+    renderer.setMask(mask, vision!.maskW, vision!.maskH);
+    maskSeen = vision!.maskVersion;
+  } else if (!mask && maskSeen !== -1) {
+    renderer.setMask(null, 1, 1);
+    maskSeen = -1;
   }
 
-  const theme = THEMES[state.theme];
-  const variant = theme.variants[state.variant];
+  const variant = th.variants[state.variant];
   const rgb = variant.colors.map(hexToRgb);
   const mirror = state.source === 'camera' && state.facing === 'user';
+  scene.update(vision?.faces ?? [], vision?.bodies ?? [], w, h, mirror, t, th);
   // 테두리·시각 스탬프는 화면 UI 와 겹치니 저장되는 사진에만 찍는다
   const capturing = state.capture;
-  overlay.draw(theme, variant, w, h, vision?.faces ?? [], { mirror, time: t, hud: state.hud, mod: state.mod, stamp: capturing });
-  renderer.setOverlay(overlay.canvas);
-  const rain = theme.effects.rain;
+  overlay.draw(th, variant, w, h, scene, { time: t, hud: state.hud, mod: state.mod, stamp: capturing });
+  renderer.setOverlay(overlay.front.canvas, th.backLayer ? overlay.back.canvas : null);
+  const fx = th.effects.particles;
   renderer.render({
     time: t,
     mirror,
-    glitch: capturing || !theme.effects.glitch ? 0 : glitchAmount(t),
-    rain: rain && state.rain ? 0.8 : 0,
-    rainColor: (rgb[rain?.colorSlot ?? 0] ?? [1, 1, 1]).map((v) => v * 0.45 + 0.85 * 0.55),
+    glitch: capturing ? 0 : glitchAmount(t),
+    particles: fx && state.fx ? 0.8 : 0,
+    particleKind: fx?.kind === 'petal' ? 2 : fx?.kind === 'sparkle' ? 1 : 0,
+    particleColor: fx?.color ? hexToRgb(fx.color) : (rgb[fx?.colorSlot ?? 0] ?? [1, 1, 1]).map((v) => v * 0.45 + 0.85 * 0.55),
     palette: new Float32Array(Array.from({ length: 5 }, (_, i) => rgb[i] ?? [0, 0, 0]).flat()),
-    post: theme.post,
+    post: th.post,
+    eyesWarp: scene.eyesWarp,
+    jawWarp: scene.jawWarp,
+    expr: scene.exprVec,
+    faces: scene.faceGeo,
+    vars: new Float32Array([0, 1, 2, 3].map((i) => variant.params?.[i] ?? 0)),
   });
 
   if (capturing) {
     state.capture = false;
-    flashUntil = t + 0.25;
+    flashUntil = th.effects.glitch ? t + 0.25 : 0;
     view.toBlob((b) => b && showPreview(b), 'image/jpeg', 0.92);
   }
 
@@ -211,7 +255,22 @@ function frame(now: number) {
     fpsEl.textContent = `${Math.round(fpsN / (t - fpsT))} FPS`;
     fpsT = t;
     fpsN = 0;
+    if (DEBUG) showDebug();
   }
+}
+
+function showDebug() {
+  const f = scene.faces[0];
+  const pct = (v: number) => String(Math.round(v * 100)).padStart(3);
+  const lines = [
+    `theme ${theme().id}  needs ${needs().join(',')}  vision ${visionCost.toFixed(0)}ms`,
+    `faces ${scene.faces.length}  bodies ${scene.bodies.length}  mask ${vision?.mask ? `${vision.maskW}x${vision.maskH}` : '-'}`,
+  ];
+  if (f) {
+    lines.push(EXPR_NAMES.map((n) => `${n} ${pct(f.expr[n])}${f.since(n) >= 0 ? '*' : ' '}`).join('  '));
+    lines.push(`yaw ${f.yaw.toFixed(2)}  pitch ${f.pitch.toFixed(2)}  roll ${((f.roll * 180) / Math.PI).toFixed(0)}°  eyes ${pct(f.eyes[0].blink)} ${pct(f.eyes[1].blink)}`);
+  }
+  debugEl.textContent = lines.join('\n');
 }
 
 // ---------- 촬영 결과 ----------
@@ -256,20 +315,20 @@ function hideSplash() {
 }
 
 function selectVariant(i: number) {
-  const n = THEMES[state.theme].variants.length;
+  const n = theme().variants.length;
   state.variant = (i + n) % n;
   chips.querySelectorAll('button').forEach((b, k) => b.classList.toggle('on', k === state.variant));
 }
 
-// 테마를 바꾸면 셰이더·색 조합 칩·지원하는 토글이 그 테마 것으로 바뀐다
+// 테마를 바꾸면 셰이더·색 조합 칩·지원하는 토글·필요한 인식이 그 테마 것으로 바뀐다
 function selectTheme(i: number) {
   state.theme = i;
   state.mod = 0;
-  const theme = THEMES[i];
-  renderer.setTheme(theme);
+  const th = THEMES[i];
+  renderer.setTheme(th);
   themeRow.querySelectorAll('button').forEach((b, k) => b.classList.toggle('on', k === i));
   chips.replaceChildren(
-    ...theme.variants.map((v, k) => {
+    ...th.variants.map((v, k) => {
       const b = document.createElement('button');
       b.textContent = v.name;
       b.addEventListener('click', () => selectVariant(k));
@@ -277,10 +336,13 @@ function selectTheme(i: number) {
     }),
   );
   selectVariant(0);
-  $('#t-rain').hidden = !theme.effects.rain;
-  $('#t-glitch').hidden = !theme.effects.glitch;
-  $('#t-mod').hidden = theme.faceMods < 2;
-  theme.fonts?.forEach((f) => document.fonts?.load(f).catch(() => {}));
+  const fxBtn = $<HTMLButtonElement>('#t-fx');
+  fxBtn.hidden = !th.effects.particles;
+  fxBtn.textContent = th.effects.particles?.label ?? '';
+  $('#t-glitch').hidden = !th.effects.glitch;
+  $('#t-mod').hidden = th.faceMods < 2;
+  th.fonts?.forEach((f) => document.fonts?.load(f, th.fontText).catch(() => {}));
+  if (state.source) ensureVision();
 }
 
 themeRow.hidden = THEMES.length < 2;
@@ -303,21 +365,22 @@ async function goCamera() {
       err.name === 'NotAllowedError' ? '카메라 권한을 허용해 주세요.' : err.message || '카메라를 열 수 없습니다.';
     splash.classList.remove('gone');
   }
-  loadVision();
+  ensureVision();
 }
 
-$('#start').addEventListener('click', goCamera);
-$('#start-photo').addEventListener('click', () => {
-  loadVision();
-  fileInput.click();
-});
-$('#gallery').addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', () => {
-  const f = fileInput.files?.[0];
-  loadVision();
+const pickFrom = (input: HTMLInputElement) => () => {
+  const f = input.files?.[0];
   if (f) openPhoto(f).catch((e) => (splashMsg.textContent = String(e)));
-  fileInput.value = '';
-});
+  input.value = '';
+};
+fileInput.addEventListener('change', pickFrom(fileInput));
+snapInput.addEventListener('change', pickFrom(snapInput));
+
+$('#start').addEventListener('click', goCamera);
+$('#start-photo').addEventListener('click', () => fileInput.click());
+$('#start-snap').addEventListener('click', () => snapInput.click());
+$('#gallery').addEventListener('click', () => fileInput.click());
+$('#snap-btn').addEventListener('click', () => snapInput.click());
 $('#shutter').addEventListener('click', () => {
   if (state.source) state.capture = true;
 });
@@ -326,7 +389,7 @@ $('#flip').addEventListener('click', async () => {
   await goCamera();
 });
 
-for (const key of ['rain', 'glitch', 'hud'] as const) {
+for (const key of ['fx', 'glitch', 'hud'] as const) {
   const b = $<HTMLButtonElement>(`#t-${key}`);
   b.classList.toggle('on', state[key]);
   b.addEventListener('click', () => {
@@ -336,7 +399,7 @@ for (const key of ['rain', 'glitch', 'hud'] as const) {
 }
 
 // 얼굴 장식 순환(테마가 가진 종류 수만큼)
-$('#t-mod').addEventListener('click', () => (state.mod = (state.mod + 1) % THEMES[state.theme].faceMods));
+$('#t-mod').addEventListener('click', () => (state.mod = (state.mod + 1) % theme().faceMods));
 
 // 좌우 스와이프로 색 조합 전환
 let downX: number | null = null;
@@ -350,10 +413,18 @@ view.addEventListener('pointerup', (e) => {
 
 requestAnimationFrame(frame);
 
-// 이미 카메라 권한이 있으면 바로 켠다
-navigator.permissions
-  ?.query({ name: 'camera' as PermissionName })
-  .then((p) => {
-    if (p.state === 'granted') goCamera();
-  })
-  .catch(() => {});
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('sw', e));
+}
+
+takeShared().catch((e) => console.error(e));
+
+// 이미 카메라 권한이 있으면 바로 켠다(공유로 들어온 사진이 있으면 그걸 먼저 보여 준다)
+if (!params.has('shared')) {
+  navigator.permissions
+    ?.query({ name: 'camera' as PermissionName })
+    .then((p) => {
+      if (p.state === 'granted') goCamera();
+    })
+    .catch(() => {});
+}

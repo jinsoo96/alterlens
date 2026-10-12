@@ -13,7 +13,7 @@
     <link rel="apple-touch-icon" href="./icon-180.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@800&family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
     <title>ALTERLENS</title>
   </head>
   <body>
@@ -24,7 +24,7 @@
       <div class="meta"><span id="fps">-- FPS</span><span id="ai">AI --</span></div>
       <div class="toggles">
         <button id="t-mod" aria-label="얼굴 개조 바꾸기">MOD</button>
-        <button id="t-rain" aria-label="비">RAIN</button>
+        <button id="t-fx" aria-label="입자 효과">FX</button>
         <button id="t-glitch" aria-label="글리치">GLITCH</button>
         <button id="t-hud" aria-label="HUD">HUD</button>
       </div>
@@ -34,13 +34,20 @@
       <nav id="themes" hidden></nav>
       <nav id="styles"></nav>
       <div class="controls">
-        <button id="gallery" class="round" aria-label="사진 불러오기">
-          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="9" cy="10" r="2" /><path d="M21 16l-5-5-9 9" /></svg>
-        </button>
+        <div class="side">
+          <button id="gallery" class="round" aria-label="사진 불러오기">
+            <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="9" cy="10" r="2" /><path d="M21 16l-5-5-9 9" /></svg>
+          </button>
+          <button id="snap-btn" class="round" aria-label="폰 기본 카메라로 찍기">
+            <svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" /></svg>
+          </button>
+        </div>
         <button id="shutter" aria-label="촬영"><span></span></button>
-        <button id="flip" class="round" aria-label="카메라 전환">
-          <svg viewBox="0 0 24 24"><path d="M4 9h11l-3-3M20 15H9l3 3" /></svg>
-        </button>
+        <div class="side end">
+          <button id="flip" class="round" aria-label="카메라 전환">
+            <svg viewBox="0 0 24 24"><path d="M4 9h11l-3-3M20 15H9l3 3" /></svg>
+          </button>
+        </div>
       </div>
     </footer>
 
@@ -48,7 +55,8 @@
       <div class="logo">ALTER<b>//</b>LENS</div>
       <p class="tag">카메라에 비친 거리와 사람을<br />실시간으로 다른 세계관으로 바꿔 보는 렌즈</p>
       <button id="start" class="primary">카메라 시작</button>
-      <button id="start-photo" class="ghost">사진으로 해보기</button>
+      <button id="start-snap" class="ghost">폰 카메라로 찍기</button>
+      <button id="start-photo" class="ghost">갤러리 사진으로</button>
       <p id="splash-msg"></p>
       <p class="fine">모든 처리는 이 기기 안에서만 이뤄지고, 사진은 어디로도 전송되지 않습니다.</p>
     </div>
@@ -62,7 +70,11 @@
       </div>
     </div>
 
+    <pre id="debug" hidden></pre>
+
     <input type="file" id="file" accept="image/*" hidden />
+    <!-- capture: 폰 기본 카메라 앱을 열고, 찍은 사진을 받아 테마를 입힌다 -->
+    <input type="file" id="snap" accept="image/*" capture="environment" hidden />
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
