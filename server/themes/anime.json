@@ -4,15 +4,14 @@
   "enabled": true,
   "order": 2,
   "live": "anime",
-  "style": "a modern Japanese anime idol illustration (vocaloid key-visual look): clean line art, bright cel shading, big sparkling eyes, glossy vivid hair and a luminous background.",
+  "style": "a hand-painted Japanese anime feature film background. Keep the real buildings, signs and their text, street and camera angle. Soft painterly brushwork, clean line art. People become natural anime characters with their real hair, clothes and poses; no costumes, no animal ears, no unusual hair colors.",
   "variants": {
-    "aqua": "Give every person long glossy aqua-teal hair and aqua eyes.",
-    "sakura": "Give every person pastel pink hair and pink eyes, with cherry blossom petals in the air.",
-    "lemon": "Give every person golden yellow hair and amber eyes.",
-    "violet": "Give every person lavender purple hair and violet eyes.",
-    "natural": "Keep each person's original hair color."
+    "day": "Deep blue sky with tall glowing summer clouds, warm sunlight, sparkling reflections on the glass.",
+    "sunset": "Orange and pink sunset sky with glowing clouds, golden backlight, long soft shadows, street lights on.",
+    "night": "Clear night sky with stars and a soft moon glow, warm shop and street lights, deep blue shadows."
   },
   "refs": [
-    "cand-0edab05e-49b8-4bd8-b17e-4cb8a3291d40.jpg"
+    "cand-b9cb92b9-b347-4884-b152-12479615d46e.jpg",
+    "cand-4336c4b5-fcb8-44dd-bd02-3cf14ded9983.jpg"
   ]
 }
