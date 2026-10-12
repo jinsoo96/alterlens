@@ -7,12 +7,16 @@
     "assets": "node scripts/fetch-assets.mjs",
     "dev": "npm run assets && vite --host",
     "build": "npm run assets && tsc --noEmit && vite build",
-    "preview": "vite preview --host --port 7420"
+    "preview": "vite preview --host --port 7420",
+    "ios": "npm run build && cap sync ios"
   },
   "dependencies": {
+    "@capacitor/core": "8.5.2",
+    "@capacitor/ios": "8.5.2",
     "@mediapipe/tasks-vision": "1.0.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.5.2",
     "typescript": "6.0.3",
     "vite": "8.3.1"
   }
