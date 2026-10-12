@@ -206,5 +206,21 @@ body.photo #view { object-fit: contain; }
 #preview[hidden] { display: none; }
 #preview img { flex: 1; min-height: 0; width: 100%; object-fit: contain; border-radius: 8px; }
 #preview .actions { display: flex; gap: 10px; }
+.ai-row { display: flex; flex-direction: column; gap: 6px; }
+.ai-row .ai {
+  width: 100%;
+  padding: 14px;
+  border: none;
+  border-radius: 12px;
+  font-family: system-ui, sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(90deg, #7a5cff, #ff2bd6);
+  box-shadow: 0 0 20px rgba(122, 92, 255, 0.45);
+}
+.ai-row .ai[hidden] { display: none; }
+.ai-row .ai:disabled { opacity: 0.7; }
+#ai-msg { margin: 0; min-height: 1em; font-size: 13px; text-align: center; color: var(--dim); font-family: system-ui, sans-serif; }
 #preview .actions button { flex: 1; min-width: 0; padding: 14px 8px; }
 #preview .actions button[hidden] { display: none; }

@@ -1,4 +1,5 @@
 import './style.css';
+import { generatePhoto, loadCatalog, type Catalog, type RemoteTheme } from './engine/ai';
 import { Overlay } from './engine/overlay';
 import { Renderer } from './engine/renderer';
 import { Scene } from './engine/scene';
@@ -20,6 +21,8 @@ const themeRow = $<HTMLElement>('#themes');
 const preview = $<HTMLDivElement>('#preview');
 const previewImg = $<HTMLImageElement>('#preview-img');
 const debugEl = $<HTMLPreElement>('#debug');
+const aiBtn = $<HTMLButtonElement>('#ai-btn');
+const aiMsg = $<HTMLParagraphElement>('#ai-msg');
 
 const LIVE_MAX = 1280;
 const PHOTO_MAX = 2048;
@@ -56,6 +59,9 @@ let visionAt = 0;
 let visionCost = 0;
 let maskSeen = -1;
 let stream: MediaStream | null = null;
+// 서버 AI 테마 목록(loadCatalog) 과 테마별 AI 지원 정보
+let catalog: Catalog | null = null;
+const aiThemes = new Map<string, RemoteTheme>();
 
 // ?debug&force=smile,wink : 테마를 만들 때 표정 반응을 얼굴 없이 미리 본다
 if (DEBUG) {
@@ -248,6 +254,15 @@ function frame(now: number) {
     state.capture = false;
     flashUntil = th.effects.glitch ? t + 0.25 : 0;
     view.toBlob((b) => b && showPreview(b), 'image/jpeg', 0.92);
+    // AI 다시 그리기용 원본(화면에 보인 그대로, 전면이면 거울)
+    const raw = document.createElement('canvas');
+    raw.width = w;
+    raw.height = h;
+    const g = raw.getContext('2d')!;
+    if (mirror) g.setTransform(-1, 0, 0, 1, w, 0);
+    g.drawImage(src as CanvasImageSource, 0, 0, w, h);
+    const shot = { theme: th.id, variant: variant.id, w, h };
+    raw.toBlob((b) => b && (lastRaw = { ...shot, blob: b }), 'image/jpeg', 0.9);
   }
 
   fpsN++;
@@ -275,6 +290,7 @@ function showDebug() {
 
 // ---------- 촬영 결과 ----------
 let lastBlob: Blob | null = null;
+let lastRaw: { blob: Blob; theme: string; variant: string; w: number; h: number } | null = null;
 
 function fileName() {
   const d = new Date();
@@ -289,7 +305,35 @@ function showPreview(b: Blob) {
   const file = new File([b], fileName(), { type: 'image/jpeg' });
   $<HTMLButtonElement>('#share').hidden = !navigator.canShare?.({ files: [file] });
   preview.hidden = false;
+  const ai = aiThemes.get(theme().id);
+  aiBtn.hidden = !(catalog?.ai && ai?.photo);
+  aiBtn.disabled = false;
+  aiBtn.textContent = '✦ AI로 다시 그리기';
+  aiMsg.textContent = '';
 }
+
+// 서버의 AI 테마로 찍은 사진을 다시 그린다(Higgsfield 등, 몇 초~수십 초)
+aiBtn.addEventListener('click', async () => {
+  if (!catalog || !lastRaw) return;
+  aiBtn.disabled = true;
+  aiBtn.textContent = 'AI가 그리는 중…';
+  aiMsg.textContent = '';
+  try {
+    const out = await generatePhoto(catalog, lastRaw.theme, lastRaw.variant, lastRaw.blob, lastRaw.w, lastRaw.h, (s) => {
+      aiMsg.textContent = s === 'queued' ? '차례를 기다리는 중' : s === 'running' ? '그리는 중' : '';
+    });
+    lastBlob = out;
+    if (previewImg.src) URL.revokeObjectURL(previewImg.src);
+    previewImg.src = URL.createObjectURL(out);
+    aiBtn.textContent = '✦ 한 번 더 그리기';
+    aiMsg.textContent = '';
+  } catch (e) {
+    aiBtn.textContent = '✦ AI로 다시 그리기';
+    aiMsg.textContent = (e as Error).message;
+  } finally {
+    aiBtn.disabled = false;
+  }
+});
 
 $('#save').addEventListener('click', () => {
   if (!lastBlob) return;
@@ -345,14 +389,35 @@ function selectTheme(i: number) {
   if (state.source) ensureVision();
 }
 
-themeRow.hidden = THEMES.length < 2;
-THEMES.forEach((th, i) => {
-  const b = document.createElement('button');
-  b.textContent = th.name;
-  b.addEventListener('click', () => selectTheme(i));
-  themeRow.append(b);
-});
+function renderThemeRow() {
+  themeRow.hidden = THEMES.length < 2;
+  themeRow.replaceChildren(
+    ...THEMES.map((th, i) => {
+      const b = document.createElement('button');
+      b.textContent = th.name + (catalog?.ai && aiThemes.get(th.id)?.photo ? ' ✦' : '');
+      b.classList.toggle('on', i === state.theme);
+      b.addEventListener('click', () => selectTheme(i));
+      return b;
+    }),
+  );
+}
+renderThemeRow();
 selectTheme(0);
+
+// 서버 테마: 켜진 것만 온다. 앱에 있는 테마면 AI 변환을 붙이고, 없는 테마는 preview 테마의 실시간 화면을 빌려 새로 끼운다
+loadCatalog().then((cat) => {
+  if (!cat) return;
+  catalog = cat;
+  for (const r of cat.themes) {
+    if (!THEMES.some((t) => t.id === r.id)) {
+      const base = THEMES.find((t) => t.id === r.preview);
+      if (!base) continue;
+      THEMES.push({ ...base, id: r.id, name: r.name });
+    }
+    aiThemes.set(r.id, r);
+  }
+  renderThemeRow();
+});
 
 async function goCamera() {
   splashMsg.textContent = '';

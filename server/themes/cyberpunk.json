@@ -1,0 +1,26 @@
+{
+  "id": "cyberpunk",
+  "name": "CYBERPUNK",
+  "enabled": true,
+  "order": 1,
+  "preview": "cyberpunk",
+  "photo": {
+    "model": "alibaba/qwen-image-3/edit",
+    "prompt": "Transform this photo into a cyberpunk night scene: glowing neon signs, wet reflective streets, holographic billboards, light rain and volumetric haze. Turn the people into cyberpunk characters with subtle chrome implants and techwear while keeping their faces, poses and the overall composition. Cinematic, high detail. No text, no watermark.",
+    "negative_prompt": "daylight, blurry, deformed hands, extra fingers, text, watermark, logo",
+    "params": { "resolution": "1k", "prompt_extend": false, "enable_thinking": false },
+    "variants": {
+      "neon": "Use magenta and cyan neon light.",
+      "volt": "Use electric yellow and cyan neon light.",
+      "blade": "Use orange smog and teal neon light.",
+      "acid": "Use toxic green neon light.",
+      "ghost": "Use icy blue and violet neon light."
+    }
+  },
+  "video": {
+    "model": "higgsfield/genjutsu/restyle/v1.0",
+    "preset_id": "",
+    "prompt": "Preserve the original movement and camera composition.",
+    "params": { "resolution": "480p" }
+  }
+}

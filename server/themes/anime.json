@@ -1,0 +1,26 @@
+{
+  "id": "anime",
+  "name": "ANIME",
+  "enabled": true,
+  "order": 2,
+  "preview": "anime",
+  "photo": {
+    "model": "alibaba/qwen-image-3/edit",
+    "prompt": "Redraw this photo as a high-quality Japanese anime illustration: clean line art, cel shading, large expressive anime eyes, smooth skin, vibrant colors, anime background art. Keep the same people, faces, expressions, poses, clothing and overall composition. No text, no watermark.",
+    "negative_prompt": "photorealistic, photo, 3d render, blurry, deformed hands, extra fingers, text, watermark, logo",
+    "params": { "resolution": "1k", "prompt_extend": false, "enable_thinking": false },
+    "variants": {
+      "aqua": "Give every person bright aqua (teal) hair and aqua eyes.",
+      "sakura": "Give every person pastel pink hair and pink eyes, with cherry blossom petals in the air.",
+      "lemon": "Give every person golden yellow hair and amber eyes.",
+      "violet": "Give every person lavender purple hair and violet eyes.",
+      "natural": "Keep each person's original hair color."
+    }
+  },
+  "video": {
+    "model": "higgsfield/genjutsu/restyle/v1.0",
+    "preset_id": "",
+    "prompt": "Preserve the original movement and camera composition.",
+    "params": { "resolution": "480p" }
+  }
+}

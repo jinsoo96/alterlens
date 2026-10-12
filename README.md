@@ -84,6 +84,21 @@ scripts/fetch-assets.mjs  MediaPipe wasm·모델을 public/ 으로 모음(git �
 
 표정 8종: `smile` · `mouthOpen` · `surprise` · `frown` · `pucker` · `blink` · `wink` · `cheekPuff`. 값은 0~1 로 부드럽게 한 것이고, 켜짐/꺼짐은 문턱 두 개(히스테리시스)라 깜빡이지 않는다. 가장 작은 테마는 `stylize` 한 함수와 색 조합 하나로 된다.
 
+## AI 테마 서버 (`server/`)
+
+실시간 화면은 폰에서, "찍은 사진을 테마로 다시 그리기"는 생성 공급자(Higgsfield)가 한다. 공급자 키와 프롬프트는 서버에만 두고 앱은 테마 id 와 사진만 보낸다.
+
+```
+node server/index.mjs          # dist 서빙 + /api (기본 127.0.0.1:7420)
+AI_PROVIDER=mock node server/index.mjs   # 키 없이 전체 흐름 시험
+node server/cli.mjs list | on <id> | off <id> | new <id> --prompt "…" | set <id> <경로> <값> | presets
+```
+
+- 테마 정의는 `server/themes/<id>.json` 한 파일(`enabled` 로 꼈다 켰다). 앱은 시작할 때 켜진 테마만 받아, 앱에 있는 테마에는 ✦ AI 변환을 붙이고 없는 테마는 `preview` 테마의 실시간 화면을 빌려 새로 끼운다. 앱 업데이트 없이 서버 파일만으로 테마를 더하고 뺀다.
+- API: `GET /api/themes` · `POST /api/generate?theme=&variant=&kind=photo|video&w=&h=`(본문 = 사진/영상) · `GET /api/jobs/:id` · `GET /api/media/:file`.
+- 키: `server/.env.local` 에 `HF_API_KEY_ID` · `HF_API_KEY_SECRET`(git 에 안 올라감). 없으면 AI 버튼이 숨는다.
+- 비용 가드: IP 당 시간 `AI_PER_IP_HOUR`(12), 하루 `AI_DAILY`(100), 동시 `AI_CONCURRENCY`(2).
+
 ## 사용 모델
 
 - `selfie_multiclass_256x256` (Image Segmenter): 0 배경 · 1 머리 · 2 몸 피부 · 3 얼굴 피부 · 4 옷 · 5 액세서리

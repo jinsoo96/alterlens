@@ -2,3 +2,5 @@ node_modules/
 dist/
 public/models/
 public/mediapipe/
+server/data/
+server/.env.local
