@@ -1,5 +1,5 @@
-import { BLUR_FRAG, COMPOSITE_FRAG, DOWN_FRAG, STYLE_FRAG, VERT } from './shaders';
-import type { Palette } from './palettes';
+import type { PostFx, Theme } from '../themes/types';
+import { BLUR_FRAG, COMPOSITE_FRAG, DOWN_FRAG, styleFrag, VERT } from './shaders';
 
 type Uniforms = Record<string, WebGLUniformLocation | null>;
 interface Prog { p: WebGLProgram; u: Uniforms }
@@ -10,12 +10,15 @@ export interface FrameParams {
   mirror: boolean;
   glitch: number;
   rain: number;
-  palette: Palette;
+  rainColor: number[];
+  palette: Float32Array; // 색 5개 × rgb
+  post: PostFx;
 }
 
 export class Renderer {
   readonly gl: WebGL2RenderingContext;
-  private style: Prog;
+  private styles = new Map<string, Prog>();
+  private style: Prog | null = null;
   private down: Prog;
   private blur: Prog;
   private comp: Prog;
@@ -35,7 +38,6 @@ export class Renderer {
     const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false });
     if (!gl) throw new Error('이 브라우저는 WebGL2 를 지원하지 않습니다.');
     this.gl = gl;
-    this.style = this.program(STYLE_FRAG);
     this.down = this.program(DOWN_FRAG);
     this.blur = this.program(BLUR_FRAG);
     this.comp = this.program(COMPOSITE_FRAG);
@@ -44,6 +46,16 @@ export class Renderer {
     this.overlayTex = this.texture(gl.LINEAR);
     gl.bindVertexArray(gl.createVertexArray());
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  }
+
+  /** 테마의 픽셀 규칙을 엔진 셰이더에 끼워 컴파일한다(테마별 1회). */
+  setTheme(theme: Theme) {
+    let prog = this.styles.get(theme.id);
+    if (!prog) {
+      prog = this.program(styleFrag(theme.glsl));
+      this.styles.set(theme.id, prog);
+    }
+    this.style = prog;
   }
 
   private program(frag: string): Prog {
@@ -158,7 +170,7 @@ export class Renderer {
   render(f: FrameParams) {
     const gl = this.gl;
     const s = this.styleT!, a = this.bloomA!, b = this.bloomB!;
-    const pal = f.palette;
+    if (!this.style) throw new Error('setTheme 먼저');
 
     this.pass(this.style, s, (u) => {
       this.bind(0, this.srcTex, u.uSrc);
@@ -169,11 +181,8 @@ export class Renderer {
       gl.uniform1f(u.uHasMask, this.hasMask ? 1 : 0);
       gl.uniform1f(u.uMirror, f.mirror ? 1 : 0);
       gl.uniform1f(u.uTime, f.time);
-      gl.uniform3fv(u.uShadow, pal.shadow);
-      gl.uniform3fv(u.uMid, pal.mid);
-      gl.uniform3fv(u.uHigh, pal.high);
-      gl.uniform3fv(u.uNeonA, pal.neonA);
-      gl.uniform3fv(u.uNeonB, pal.neonB);
+      gl.uniform1f(u.uOverlayGlow, f.post.overlayGlow);
+      gl.uniform3fv(u['uPal[0]'], f.palette);
     });
 
     this.pass(this.down, a, (u) => {
@@ -191,6 +200,7 @@ export class Renderer {
       });
     }
 
+    const fx = f.post;
     this.pass(this.comp, null, (u) => {
       this.bind(0, s.tex[0], u.uColor);
       this.bind(1, s.tex[1], u.uGlow);
@@ -199,7 +209,14 @@ export class Renderer {
       gl.uniform1f(u.uTime, f.time);
       gl.uniform1f(u.uGlitch, f.glitch);
       gl.uniform1f(u.uRain, f.rain);
-      gl.uniform3fv(u.uNeonA, pal.neonA);
+      gl.uniform3fv(u.uRainColor, f.rainColor);
+      gl.uniform1f(u.uGlowAmt, fx.glow);
+      gl.uniform1f(u.uBloomAmt, fx.bloom);
+      gl.uniform1f(u.uChroma, fx.chroma);
+      gl.uniform1f(u.uScan, fx.scanlines);
+      gl.uniform1f(u.uGrain, fx.grain);
+      gl.uniform1f(u.uVignette, fx.vignette);
+      gl.uniform1f(u.uExposure, fx.exposure);
     });
   }
 }

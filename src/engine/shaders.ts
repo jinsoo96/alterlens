@@ -7,6 +7,7 @@ void main() {
   gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
+// 테마 GLSL 에서도 쓸 수 있는 공용 함수
 const COMMON = `
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 vec3 rgb2hsv(vec3 c) {
@@ -34,9 +35,10 @@ float fbm(vec2 p) {
 }
 `;
 
-// 1패스: 원본 → 사이버펑크 색(oColor) + 빛나는 성분(oGlow).
+// 1패스: 엔진이 픽셀마다 Px(원본색·윤곽·사람 부위)를 만들어 테마의 stylize() 에 넘기고,
+// 결과 색(oColor)과 빛나는 성분(oGlow)을 받는다. 장식 레이어(uOverlay)는 그 위에 덮는다.
 // 마스크 클래스(selfie_multiclass): 0 배경 1 머리카락 2 몸 피부 3 얼굴 피부 4 옷 5 액세서리
-export const STYLE_FRAG = `#version 300 es
+export const styleFrag = (themeGlsl: string) => `#version 300 es
 precision highp float;
 in vec2 vUv;
 uniform sampler2D uSrc;
@@ -47,19 +49,24 @@ uniform vec2 uMaskStep;
 uniform float uHasMask;
 uniform float uMirror;
 uniform float uTime;
-uniform vec3 uShadow;
-uniform vec3 uMid;
-uniform vec3 uHigh;
-uniform vec3 uNeonA;
-uniform vec3 uNeonB;
+uniform float uOverlayGlow;
+uniform vec3 uPal[5];
 layout(location = 0) out vec4 oColor;
 layout(location = 1) out vec4 oGlow;
 ${COMMON}
-vec3 tritone(float l) {
-  return l < 0.5 ? mix(uShadow, uMid, l * 2.0) : mix(uMid, uHigh, (l - 0.5) * 2.0);
-}
+struct Px {
+  vec2 st;      // 이미지 좌표(왼쪽 위 0,0)
+  vec3 src;     // 원본 색
+  float luma;
+  vec3 hsv;
+  vec2 grad;    // 소벨 기울기(x 세로 윤곽, y 가로 윤곽)
+  vec4 parts;   // 사람 부위 비율: x 머리카락 y 몸 피부 z 얼굴 피부 w 옷·액세서리
+  float person; // 사람일 정도 0~1
+  float rim;    // 사람 윤곽 안쪽 테두리 0~1
+  float time;
+  vec2 texel;   // 1 픽셀 크기(uv)
+};
 float cls(vec2 p) { return floor(texture(uMask, p).r * 255.0 + 0.5); }
-// 3x3 이웃의 클래스 비율로 경계를 부드럽게: x 머리 y 몸피부 z 얼굴피부 w 옷·액세서리
 vec4 classWeights(vec2 p) {
   vec4 w = vec4(0.0);
   for (int j = -1; j <= 1; j++) {
@@ -71,15 +78,17 @@ vec4 classWeights(vec2 p) {
   return w / 9.0;
 }
 float personAt(vec2 p) { return step(0.5, cls(p)); }
-
+${themeGlsl}
 void main() {
-  vec2 st = vec2(vUv.x, 1.0 - vUv.y);
-  vec2 sv = vec2(mix(st.x, 1.0 - st.x, uMirror), st.y);
-  vec3 src = texture(uSrc, sv).rgb;
-  float L = luma(src);
-  vec3 hsv = rgb2hsv(src);
+  Px p;
+  p.st = vec2(vUv.x, 1.0 - vUv.y);
+  vec2 sv = vec2(mix(p.st.x, 1.0 - p.st.x, uMirror), p.st.y);
+  p.src = texture(uSrc, sv).rgb;
+  p.luma = luma(p.src);
+  p.hsv = rgb2hsv(p.src);
+  p.time = uTime;
+  p.texel = uTexel;
 
-  // 소벨 윤곽: 세로 윤곽은 네온A, 가로 윤곽은 네온B
   vec2 o = uTexel * 1.5;
   float a00 = luma(texture(uSrc, sv + vec2(-o.x, -o.y)).rgb);
   float a01 = luma(texture(uSrc, sv + vec2(-o.x, 0.0)).rgb);
@@ -89,72 +98,29 @@ void main() {
   float a20 = luma(texture(uSrc, sv + vec2(o.x, -o.y)).rgb);
   float a21 = luma(texture(uSrc, sv + vec2(o.x, 0.0)).rgb);
   float a22 = luma(texture(uSrc, sv + vec2(o.x, o.y)).rgb);
-  float gx = (a20 + 2.0 * a21 + a22) - (a00 + 2.0 * a01 + a02);
-  float gy = (a02 + 2.0 * a12 + a22) - (a00 + 2.0 * a10 + a20);
-  float edge = smoothstep(0.16, 0.55, length(vec2(gx, gy)));
-  vec3 edgeCol = mix(uNeonB, uNeonA, abs(gx) / (abs(gx) + abs(gy) + 1e-4));
+  p.grad = vec2((a20 + 2.0 * a21 + a22) - (a00 + 2.0 * a01 + a02),
+                (a02 + 2.0 * a12 + a22) - (a00 + 2.0 * a10 + a20));
 
-  // 배경: 밤 톤으로 내리고, 원래 채도 높은 간판·차선은 네온으로 살린다
-  vec3 bg = tritone(pow(L, 1.75) * 0.9);
-  bg = mix(bg, src * vec3(0.45, 0.5, 0.75), 0.15);
-  float sat = smoothstep(0.28, 0.6, hsv.y) * smoothstep(0.2, 0.5, hsv.z);
-  vec3 vivid = hsv2rgb(vec3(hsv.x, min(1.0, hsv.y * 1.3 + 0.15), 1.0));
-  bg = mix(bg, vivid * (0.45 + 0.7 * hsv.z), sat * 0.85);
-
-  // 밝고 무채색인 위쪽 = 하늘 → 스모그 낀 밤하늘
-  float skyW = smoothstep(0.58, 0.8, L) * (1.0 - smoothstep(0.06, 0.22, hsv.y))
-             * (1.0 - smoothstep(0.3, 0.7, st.y)) * (1.0 - edge);
-  float haze = fbm(st * vec2(3.0, 7.0) + vec2(uTime * 0.015, 0.0));
-  vec3 skyCol = mix(uShadow * 0.5, uNeonB * 0.55, smoothstep(0.0, 0.65, st.y)) + uNeonA * haze * 0.12;
-  bg = mix(bg, skyCol, skyW);
-
-  vec3 bgGlow = edgeCol * edge * (1.0 - skyW) * 0.8
-              + vivid * sat * 0.6
-              + uHigh * smoothstep(0.82, 0.98, L) * (1.0 - skyW) * 0.3;
-
-  vec3 color = bg;
-  vec3 glow = bgGlow;
-
+  p.parts = vec4(0.0);
+  p.person = 0.0;
+  p.rim = 0.0;
   if (uHasMask > 0.5) {
-    vec4 cw = classWeights(sv);
-    float person = clamp(cw.x + cw.y + cw.z + cw.w, 0.0, 1.0);
-    if (person > 0.0) {
-      // 머리카락: 팔레트 두 네온 사이를 흐르는 그라데이션
-      vec3 hairCol = mix(uNeonB, uNeonA, 0.5 + 0.5 * sin(st.y * 9.0 - uTime * 1.5)) * (0.35 + 1.2 * L);
-      // 얼굴: 차가운 피부톤, 알아볼 수 있게 원본 디테일 유지
-      vec3 faceCol = mix(src, vec3(L * 1.08) * mix(vec3(1.0), uNeonA, 0.22), 0.55);
-      // 몸 피부: 크롬 의수 느낌의 줄무늬 반사
-      float band = 0.5 + 0.5 * cos(L * 14.0 + st.y * 5.0 - uTime * 0.6);
-      vec3 chrome = mix(uShadow * 0.8, mix(vec3(0.9, 0.97, 1.0), uNeonA, 0.3), band) * (0.6 + 0.6 * L);
-      vec3 skinCol = mix(src, chrome, 0.6);
-      // 옷: 검은 테크웨어 + 회로 무늬
-      vec2 cg = st / uTexel / 22.0;
-      vec2 cell = floor(cg), f = fract(cg);
-      float r = hash(cell);
-      float trace = r < 0.5 ? 1.0 - smoothstep(0.0, 0.07, abs(f.y - 0.5)) : 1.0 - smoothstep(0.0, 0.07, abs(f.x - 0.5));
-      trace *= step(0.6, hash(cell + 7.0)) * (0.5 + 0.5 * sin(uTime * 2.5 + r * 6.283));
-      vec3 clothCol = vec3(L * 0.42) * mix(vec3(1.0), uShadow * 2.5 + 0.2, 0.45);
-      vec3 clothGlow = uNeonB * edge * 1.2 + uNeonA * trace * 0.35;
-
-      float ws = max(cw.x + cw.y + cw.z + cw.w, 1e-4);
-      vec3 pc = (hairCol * cw.x + skinCol * cw.y + faceCol * cw.z + clothCol * cw.w) / ws;
-      vec3 pg = (hairCol * 0.55 * cw.x + uNeonA * 0.08 * cw.y + clothGlow * cw.w) / ws;
-
-      // 사람 윤곽 안쪽 림라이트
+    p.parts = classWeights(sv);
+    p.person = clamp(p.parts.x + p.parts.y + p.parts.z + p.parts.w, 0.0, 1.0);
+    if (p.person > 0.0) {
       vec2 d = uMaskStep * 3.0;
       float around = 0.25 * (personAt(sv + vec2(d.x, 0.0)) + personAt(sv - vec2(d.x, 0.0))
                            + personAt(sv + vec2(0.0, d.y)) + personAt(sv - vec2(0.0, d.y)));
-      float rim = person * (1.0 - around);
-
-      color = mix(bg, pc, person);
-      glow = mix(bgGlow, pg, person) + mix(uNeonA, uNeonB, st.y) * rim * 1.6;
+      p.rim = p.person * (1.0 - around);
     }
   }
 
-  vec4 ov = texture(uOverlay, st);
-  color = mix(color, ov.rgb, ov.a * 0.9);
-  glow += ov.rgb * ov.a * 0.9;
+  vec3 color, glow;
+  stylize(p, color, glow);
 
+  vec4 ov = texture(uOverlay, p.st);
+  color = mix(color, ov.rgb, ov.a * 0.9);
+  glow += ov.rgb * ov.a * uOverlayGlow;
   oColor = vec4(color, 1.0);
   oGlow = vec4(glow, 1.0);
 }`;
@@ -186,7 +152,7 @@ void main() {
   o = c;
 }`;
 
-// 최종: 글리치 · 색수차 · 블룸 합성 · 비 · 스캔라인 · 비네트 · 그레인
+// 최종 합성: 글리치 · 색수차 · 발광 · 비 · 스캔라인 · 비네트 · 그레인 · 톤매핑. 세기는 테마 PostFx.
 export const COMPOSITE_FRAG = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -197,7 +163,14 @@ uniform vec2 uRes;
 uniform float uTime;
 uniform float uGlitch;
 uniform float uRain;
-uniform vec3 uNeonA;
+uniform vec3 uRainColor;
+uniform float uGlowAmt;
+uniform float uBloomAmt;
+uniform float uChroma;
+uniform float uScan;
+uniform float uGrain;
+uniform float uVignette;
+uniform float uExposure;
 out vec4 oColor;
 ${COMMON}
 float rainLayer(vec2 p, float scale, float speed) {
@@ -217,19 +190,19 @@ void main() {
   uv.x += (rnd - 0.5) * 0.12 * uGlitch * step(0.6, rnd);
 
   vec2 d = uv - 0.5;
-  float ca = 0.0018 + 0.012 * uGlitch;
+  float ca = uChroma + 0.012 * uGlitch;
   vec3 col = vec3(texture(uColor, uv + d * ca).r, texture(uColor, uv).g, texture(uColor, uv - d * ca).b);
-  col += texture(uGlow, uv).rgb * 0.55 + texture(uBloom, uv).rgb * 1.5;
+  col += texture(uGlow, uv).rgb * uGlowAmt + texture(uBloom, uv).rgb * uBloomAmt;
 
   if (uRain > 0.0) {
     vec2 rp = vec2(uv.x * uRes.x / uRes.y, uv.y);
     float r = rainLayer(rp, 60.0, 0.9) + 0.6 * rainLayer(rp + 3.1, 110.0, 0.7);
-    col += mix(uNeonA, vec3(0.85), 0.55) * r * 0.32 * uRain;
+    col += uRainColor * r * 0.32 * uRain;
   }
 
-  col *= 0.93 + 0.07 * sin(gl_FragCoord.y * 1.7);
-  col *= mix(1.0, smoothstep(0.95, 0.25, length(d * vec2(1.0, 1.15))), 0.7);
-  col += (hash(gl_FragCoord.xy + fract(uTime) * 100.0) - 0.5) * 0.035;
-  col = 1.0 - exp(-col * 1.35);
+  col *= 1.0 - uScan + uScan * sin(gl_FragCoord.y * 1.7);
+  col *= mix(1.0, smoothstep(0.95, 0.25, length(d * vec2(1.0, 1.15))), uVignette);
+  col += (hash(gl_FragCoord.xy + fract(uTime) * 100.0) - 0.5) * uGrain;
+  col = 1.0 - exp(-col * uExposure);
   oColor = vec4(col, 1.0);
 }`;

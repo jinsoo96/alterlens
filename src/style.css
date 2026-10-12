@@ -75,6 +75,20 @@ body.photo #view { object-fit: contain; }
   padding: 10px 0 14px;
   scrollbar-width: none;
 }
+#themes { display: flex; gap: 6px; justify-content: center; overflow-x: auto; padding-top: 8px; scrollbar-width: none; }
+#themes[hidden] { display: none; }
+#themes button {
+  flex: none;
+  background: var(--glass);
+  border: 1px solid rgba(232, 247, 255, 0.2);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+}
+#themes button.on { color: var(--fg); border-color: var(--fg); }
+.toggles button[hidden] { display: none; }
 #styles button {
   flex: none;
   background: transparent;

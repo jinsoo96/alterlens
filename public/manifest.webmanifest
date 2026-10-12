@@ -1,7 +1,7 @@
 {
-  "name": "NEON LENS",
-  "short_name": "NEON LENS",
-  "description": "카메라를 켜면 거리와 사람이 실시간으로 사이버펑크가 되는 카메라",
+  "name": "ALTERLENS",
+  "short_name": "ALTERLENS",
+  "description": "카메라에 비친 거리와 사람을 실시간으로 다른 세계관으로 바꿔 보는 렌즈",
   "start_url": "./",
   "scope": "./",
   "display": "fullscreen",

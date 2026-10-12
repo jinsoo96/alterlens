@@ -7,14 +7,14 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="NEON LENS" />
+    <meta name="apple-mobile-web-app-title" content="ALTERLENS" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./icon-180.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
-    <title>NEON LENS</title>
+    <title>ALTERLENS</title>
   </head>
   <body>
     <canvas id="view"></canvas>
@@ -31,6 +31,7 @@
     </header>
 
     <footer id="bottom">
+      <nav id="themes" hidden></nav>
       <nav id="styles"></nav>
       <div class="controls">
         <button id="gallery" class="round" aria-label="사진 불러오기">
@@ -44,8 +45,8 @@
     </footer>
 
     <div id="splash">
-      <div class="logo">NEON<b>//</b>LENS</div>
-      <p class="tag">카메라를 켜는 순간, 거리는 네온 도시가 되고<br />사람은 사이버펑크 캐릭터가 됩니다.</p>
+      <div class="logo">ALTER<b>//</b>LENS</div>
+      <p class="tag">카메라에 비친 거리와 사람을<br />실시간으로 다른 세계관으로 바꿔 보는 렌즈</p>
       <button id="start" class="primary">카메라 시작</button>
       <button id="start-photo" class="ghost">사진으로 해보기</button>
       <p id="splash-msg"></p>
