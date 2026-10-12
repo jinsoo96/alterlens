@@ -75,6 +75,35 @@ body.photo #view { object-fit: contain; }
   padding: 10px 0 14px;
   scrollbar-width: none;
 }
+#example {
+  position: absolute;
+  right: 16px;
+  top: -150px;
+  width: 92px;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+#example[hidden] { display: none; }
+#example img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: cover; }
+#example span { display: block; padding: 3px 0; font: 700 10px system-ui, sans-serif; color: #fff; background: linear-gradient(90deg, #7a5cff, #ff2bd6); }
+#example-view { position: fixed; inset: 0; z-index: 30; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; background: rgba(5, 3, 10, 0.94); }
+#example-view[hidden] { display: none; }
+#example-view img { max-width: 100%; max-height: 80vh; border-radius: 12px; }
+#example-view p { margin: 0; color: var(--dim); font: 14px system-ui, sans-serif; }
+#splash-gallery { width: 100%; max-width: 420px; margin-top: 6px; }
+#splash-gallery[hidden] { display: none; }
+#splash-gallery p { margin: 0 0 8px; font: 600 13px system-ui, sans-serif; color: var(--dim); }
+#splash-gallery .strip { display: flex; gap: 8px; justify-content: center; }
+#splash-gallery figure { margin: 0; flex: 1; max-width: 120px; }
+#splash-gallery img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25); }
+#splash-gallery figcaption { margin-top: 4px; font: 700 11px 'Orbitron', sans-serif; letter-spacing: 0.08em; color: var(--fg); }
+#preview.working img { animation: drawing 1.6s ease-in-out infinite; }
+@keyframes drawing { 0%, 100% { filter: brightness(0.75) saturate(0.6); } 50% { filter: brightness(1) saturate(1); } }
+#preview.working #ai-msg { color: var(--fg); font-size: 15px; font-weight: 700; }
 #themes { display: flex; gap: 6px; justify-content: center; overflow-x: auto; padding-top: 8px; scrollbar-width: none; }
 #themes[hidden] { display: none; }
 #themes button {

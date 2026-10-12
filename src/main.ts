@@ -26,6 +26,8 @@ const aiMsg = $<HTMLParagraphElement>('#ai-msg');
 const stepsEl = $<HTMLDivElement>('#steps');
 const chatForm = $<HTMLFormElement>('#chat');
 const chatInput = $<HTMLInputElement>('#chat-input');
+const exampleBtn = $<HTMLButtonElement>('#example');
+const exampleView = $<HTMLDivElement>('#example-view');
 
 const LIVE_MAX = 1280;
 const PHOTO_MAX = 2048;
@@ -256,7 +258,8 @@ function frame(now: number) {
   if (capturing) {
     state.capture = false;
     flashUntil = th.effects.glitch ? t + 0.25 : 0;
-    view.toBlob((b) => b && showPreview(b), 'image/jpeg', 0.92);
+    const seq = ++captureSeq;
+    view.toBlob((b) => b && showPreview(b, seq), 'image/jpeg', 0.92);
     // AI 다시 그리기용 원본(화면에 보인 그대로, 전면이면 거울)
     const raw = document.createElement('canvas');
     raw.width = w;
@@ -265,7 +268,7 @@ function frame(now: number) {
     if (mirror) g.setTransform(-1, 0, 0, 1, w, 0);
     g.drawImage(src as CanvasImageSource, 0, 0, w, h);
     const shot = { theme: th.id, variant: variant.id, w, h, scene: sceneReport(th, variant.id, w) };
-    raw.toBlob((b) => b && (lastRaw = { ...shot, blob: b }), 'image/jpeg', 0.9);
+    raw.toBlob((b) => b && (lastRaw = { ...shot, blob: b, seq }), 'image/jpeg', 0.9);
   }
 
   fpsN++;
@@ -307,7 +310,8 @@ function sceneReport(th: (typeof THEMES)[number], variantId: string, w: number):
 
 // ---------- 촬영 결과 ----------
 let lastBlob: Blob | null = null;
-let lastRaw: { blob: Blob; theme: string; variant: string; w: number; h: number; scene: SceneReport } | null = null;
+let lastRaw: { blob: Blob; theme: string; variant: string; w: number; h: number; scene: SceneReport; seq: number } | null = null;
+let captureSeq = 0;
 let session: Session | null = null;
 
 function fileName() {
@@ -316,7 +320,7 @@ function fileName() {
   return `alterlens-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.jpg`;
 }
 
-function showPreview(b: Blob) {
+function showPreview(b: Blob, seq: number) {
   lastBlob = b;
   if (previewImg.src) URL.revokeObjectURL(previewImg.src);
   previewImg.src = URL.createObjectURL(b);
@@ -331,6 +335,26 @@ function showPreview(b: Blob) {
   aiBtn.disabled = false;
   aiBtn.textContent = `✦ ${theme().name} 그림으로 바꾸기`;
   aiMsg.textContent = '';
+  preview.classList.remove('working');
+  // AI 테마면 셔터 한 번으로 바로 변환을 시작한다(같은 촬영의 원본 프레임이 준비되면)
+  if (catalog?.ai && ai) void startTransform(seq);
+}
+
+async function startTransform(seq: number) {
+  for (let i = 0; i < 60 && lastRaw?.seq !== seq; i++) await new Promise((r) => setTimeout(r, 50));
+  if (!catalog || !lastRaw || lastRaw.seq !== seq || preview.hidden) return;
+  aiBtn.hidden = true;
+  preview.classList.add('working');
+  aiMsg.textContent = '보내는 중…';
+  try {
+    const { blob, theme: themeId, variant, scene: sc, w, h } = lastRaw;
+    await follow(await createTransform(catalog, { image: blob, themeId, variant, scene: sc, w, h }));
+  } catch (e) {
+    preview.classList.remove('working');
+    aiBtn.hidden = false;
+    aiBtn.textContent = '✦ 다시 시도';
+    aiMsg.textContent = (e as Error).message;
+  }
 }
 
 // ---------- 테마 변환 세션: 원본 → 테마 그림 → 채팅으로 이어서 고치기 ----------
@@ -352,6 +376,7 @@ function renderSession(s: Session) {
   aiBtn.hidden = true;
   chatForm.hidden = false;
   chatInput.disabled = working;
+  preview.classList.toggle('working', working);
   aiMsg.textContent = working ? (last.kind === 'chat' ? `「${last.text}」 반영하는 중…` : `${s.theme.toUpperCase()} 그림으로 그리는 중…(1~3분)`) : last.status === 'failed' ? `실패: ${last.error ?? ''}` : '';
   stepsEl.replaceChildren(
     ...s.steps.map((st) => {
@@ -378,17 +403,9 @@ async function follow(s: Session) {
   await showStep(done);
 }
 
-aiBtn.addEventListener('click', async () => {
-  if (!catalog || !lastRaw) return;
-  aiBtn.disabled = true;
-  aiMsg.textContent = '보내는 중…';
-  try {
-    const { blob, theme: themeId, variant, scene: sc, w, h } = lastRaw;
-    await follow(await createTransform(catalog, { image: blob, themeId, variant, scene: sc, w, h }));
-  } catch (e) {
-    aiBtn.disabled = false;
-    aiMsg.textContent = (e as Error).message;
-  }
+// 자동 시작이 실패했을 때 다시 시도
+aiBtn.addEventListener('click', () => {
+  if (lastRaw) void startTransform(lastRaw.seq);
 });
 
 // 결과를 보고 대화로 이어서 고친다("머리 길게", "비 오게")
@@ -449,6 +466,7 @@ function selectTheme(i: number) {
     }),
   );
   selectVariant(0);
+  updateExample();
   const fxBtn = $<HTMLButtonElement>('#t-fx');
   fxBtn.hidden = !th.effects.particles;
   fxBtn.textContent = th.effects.particles?.label ?? '';
@@ -489,7 +507,43 @@ loadCatalog().then((cat) => {
     aiThemes.set(r.id, r);
   }
   renderThemeRow();
+  updateExample();
+  renderSplashGallery();
 });
+
+// 고른 테마로 실제 바뀐 예시(스튜디오에서 고른 기준 그림). 누르면 크게
+function updateExample() {
+  const r = aiThemes.get(theme().id);
+  const src = catalog?.ai && r?.examples[0] ? mediaUrl(catalog, r.examples[0]) : '';
+  exampleBtn.hidden = !src;
+  if (src) exampleBtn.querySelector('img')!.src = src;
+}
+exampleBtn.addEventListener('click', () => {
+  exampleView.querySelector('img')!.src = exampleBtn.querySelector('img')!.src;
+  exampleView.querySelector('p')!.textContent = `${theme().name} 테마로 찍으면 이렇게 바뀌어요 · 눌러서 닫기`;
+  exampleView.hidden = false;
+});
+exampleView.addEventListener('click', () => (exampleView.hidden = true));
+
+// 첫 화면: 테마별 예시 한 장씩
+function renderSplashGallery() {
+  if (!catalog?.ai) return;
+  const items = catalog.themes.filter((t) => t.examples[0]);
+  const strip = $('#splash-gallery .strip');
+  strip.replaceChildren(
+    ...items.map((t) => {
+      const f = document.createElement('figure');
+      const img = document.createElement('img');
+      img.src = mediaUrl(catalog!, t.examples[0]);
+      img.alt = '';
+      const cap = document.createElement('figcaption');
+      cap.textContent = t.name;
+      f.append(img, cap);
+      return f;
+    }),
+  );
+  $('#splash-gallery').hidden = items.length === 0;
+}
 
 async function goCamera() {
   splashMsg.textContent = '';
