@@ -1,0 +1,19 @@
+{
+  "name": "neon-lens",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "assets": "node scripts/fetch-assets.mjs",
+    "dev": "npm run assets && vite --host",
+    "build": "npm run assets && tsc --noEmit && vite build",
+    "preview": "vite preview --host --port 7420"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "1.0.1"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "vite": "8.3.1"
+  }
+}
