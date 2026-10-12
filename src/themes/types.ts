@@ -93,6 +93,8 @@ export interface Particles {
 export interface Theme {
   id: string;
   name: string;
+  /** 테마 줄에 안 보이는 실시간 룩(서버 테마가 빌려 쓰는 것) */
+  hidden?: boolean;
   variants: ThemeVariant[];
   needs: Capability[];
   /**
@@ -107,6 +109,8 @@ export interface Theme {
   warp?: { eyes?: number; slim?: number };
   /** 얼굴 장식 종류 수(MOD 버튼이 순환하는 수). 2 미만이면 버튼을 숨긴다. */
   faceMods: number;
+  /** 얼굴 장식 MOD 순서대로의 영어 이름. 촬영 후 AI 변환 지시문에 "이 사람은 ○○를 하고 있다"로 들어간다 */
+  aiNames?: string[];
   /** 뒤 레이어(날개·후광처럼 사람 뒤에 그릴 것)를 쓰는지 */
   backLayer?: boolean;
   decorateFace?(d: DecorCtx, face: FaceView): void;

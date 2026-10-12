@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ALTERLENS 테마 스튜디오</title>
+<style>
+  :root { --bg: #0b0a12; --panel: #15131f; --line: #2a2738; --fg: #ece9f6; --dim: #9a95b0; --accent: #ff4fd8; --ok: #3ddc97; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, sans-serif; }
+  header { position: sticky; top: 0; display: flex; gap: 12px; align-items: center; padding: 12px 20px; background: #0b0a12ee; border-bottom: 1px solid var(--line); z-index: 2; }
+  header h1 { margin: 0; font-size: 16px; letter-spacing: .08em; }
+  header .meta { color: var(--dim); font-size: 12px; margin-left: auto; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px; display: grid; gap: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .tag { font-size: 11px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--dim); }
+  .tag.on { color: var(--ok); border-color: var(--ok); }
+  h2 { margin: 0; font-size: 18px; }
+  input, textarea, select { background: #0e0d16; color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; }
+  textarea { width: 100%; min-height: 70px; }
+  label { display: grid; gap: 4px; color: var(--dim); font-size: 12px; }
+  button { background: #231f33; color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font: inherit; cursor: pointer; }
+  button.primary { background: var(--accent); color: #12051a; border: none; font-weight: 700; }
+  button:disabled { opacity: .5; cursor: default; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 10px; }
+  .cand { position: relative; border: 2px solid transparent; border-radius: 10px; overflow: hidden; background: #0e0d16; aspect-ratio: 3/4; display: grid; place-items: center; color: var(--dim); font-size: 12px; }
+  .cand img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cand.pick { border-color: var(--accent); }
+  .cand .badge { position: absolute; top: 6px; left: 6px; background: var(--accent); color: #12051a; font-weight: 700; font-size: 11px; padding: 1px 6px; border-radius: 6px; }
+  .muted { color: var(--dim); font-size: 12px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 700px) { .two { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>ALTERLENS 테마 스튜디오</h1>
+  <input id="token" type="password" placeholder="스튜디오 토큰" />
+  <button id="load">불러오기</button>
+  <span class="meta" id="meta"></span>
+</header>
+<main>
+  <section class="card">
+    <h2>새 테마 / 고치기</h2>
+    <p class="muted">그림체를 영어 한두 문장으로 적는다(테마 적용 지시문 앞부분이 된다). 예시를 만들어 보고 마음에 드는 것을 기준 그림으로 고른 뒤 켠다.</p>
+    <div class="two">
+      <label>id(소문자·하이픈)<input id="f-id" placeholder="anime" /></label>
+      <label>이름(앱 칩에 보임)<input id="f-name" placeholder="ANIME" /></label>
+      <label>실시간 룩(앱 셰이더)<select id="f-live"><option value="plain">plain(원본)</option><option value="cyberpunk">cyberpunk</option><option value="anime">anime</option></select></label>
+      <label>순서<input id="f-order" type="number" value="50" /></label>
+    </div>
+    <label style="margin-top:10px">그림체(style, 320자)<textarea id="f-style" maxlength="320" placeholder="a modern Japanese anime idol illustration ..."></textarea></label>
+    <label style="margin-top:10px">색 조합별 문장(한 줄에 하나, "id: 문장")<textarea id="f-variants" placeholder="aqua: Give every person long aqua-teal hair and aqua eyes."></textarea></label>
+    <div class="row" style="margin-top:10px"><button class="primary" id="save">저장</button><span class="muted" id="save-msg"></span></div>
+  </section>
+  <div id="themes"></div>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const tokenEl = $('#token');
+try { tokenEl.value = localStorage.getItem('studio-token') || ''; } catch {}
+let picks = {};
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, { ...opts, headers: { 'X-Studio-Token': tokenEl.value, ...(opts.body && !(opts.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}), ...(opts.headers || {}) } });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body?.error?.message || res.status);
+  return body;
+}
+
+function card(t) {
+  const el = document.createElement('section');
+  el.className = 'card';
+  picks[t.id] ??= new Set(t.refs || []);
+  const running = (t.candidates || []).some((c) => c.status === 'running');
+  el.innerHTML = `
+    <div class="row"><h2>${esc(t.name)}</h2><span class="tag">${esc(t.id)}</span><span class="tag">실시간: ${esc(t.live || '-')}</span>
+      <span class="tag ${t.enabled ? 'on' : ''}">${t.enabled ? '켜짐' : '꺼짐'}</span>
+      <span style="margin-left:auto" class="row"><button data-act="edit">고치기</button><button data-act="toggle">${t.enabled ? '끄기' : '켜기'}</button></span></div>
+    <p class="muted">${esc(t.style)}</p>
+    <div class="row"><label class="row" style="color:var(--fg)">예시 사진으로 그려 보기 <input type="file" accept="image/*" data-act="sample" /></label>
+      <button class="primary" data-act="refs">고른 ${picks[t.id].size}장을 기준 그림으로 저장</button>
+      <span class="muted">${running ? '그리는 중… (Ailism 경유는 1~3분)' : ''}</span></div>
+    <div class="grid"></div>`;
+  const grid = el.querySelector('.grid');
+  for (const c of t.candidates || []) {
+    const box = document.createElement('div');
+    box.className = 'cand' + (picks[t.id].has(c.file) ? ' pick' : '');
+    if (c.status === 'done') {
+      box.innerHTML = `<img src="${esc(c.url)}" alt="" />${(t.refs || []).includes(c.file) ? '<span class="badge">기준</span>' : ''}`;
+      box.onclick = () => { picks[t.id].has(c.file) ? picks[t.id].delete(c.file) : picks[t.id].add(c.file); render(); };
+    } else box.textContent = c.status === 'running' ? '그리는 중…' : `실패: ${c.error || ''}`; // textContent 라 안전
+    grid.append(box);
+  }
+  el.querySelector('[data-act=toggle]').onclick = async () => { await api(`/api/studio/themes/${t.id}/enabled`, { method: 'POST', body: JSON.stringify({ enabled: !t.enabled }) }); load(); };
+  el.querySelector('[data-act=refs]').onclick = async () => { await api(`/api/studio/themes/${t.id}/refs`, { method: 'POST', body: JSON.stringify({ files: [...picks[t.id]] }) }); load(); };
+  el.querySelector('[data-act=sample]').onchange = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    const form = new FormData(); form.append('image', f);
+    await api(`/api/studio/themes/${t.id}/candidates`, { method: 'POST', body: form }); load();
+  };
+  el.querySelector('[data-act=edit]').onclick = () => {
+    $('#f-id').value = t.id; $('#f-name').value = t.name; $('#f-live').value = t.live || 'plain'; $('#f-order').value = t.order ?? 50;
+    $('#f-style').value = t.style; $('#f-variants').value = Object.entries(t.variants || {}).map(([k, v]) => `${k}: ${v}`).join('\n');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  return el;
+}
+
+let data = null, timer = null;
+function render() { $('#themes').replaceChildren(...(data?.themes || []).map(card)); }
+async function load() {
+  try { localStorage.setItem('studio-token', tokenEl.value); } catch {}
+  try {
+    data = await api('/api/studio/themes');
+    $('#meta').textContent = `공급자 ${data.provider} · 참고 그림 ${data.caps.refs}장까지 · 지시문 ${data.caps.maxPrompt}자`;
+    render();
+    clearTimeout(timer);
+    if (data.themes.some((t) => (t.candidates || []).some((c) => c.status === 'running'))) timer = setTimeout(load, 4000);
+  } catch (e) { $('#meta').textContent = `불러오기 실패: ${e.message}`; }
+}
+$('#load').onclick = load;
+$('#save').onclick = async () => {
+  const variants = {};
+  for (const line of $('#f-variants').value.split('\n')) { const i = line.indexOf(':'); if (i > 0) variants[line.slice(0, i).trim()] = line.slice(i + 1).trim(); }
+  try {
+    await api('/api/studio/themes', { method: 'POST', body: JSON.stringify({ id: $('#f-id').value.trim(), name: $('#f-name').value.trim(), live: $('#f-live').value, order: Number($('#f-order').value), style: $('#f-style').value.trim(), variants }) });
+    $('#save-msg').textContent = '저장했습니다(꺼진 상태로 생깁니다)'; load();
+  } catch (e) { $('#save-msg').textContent = e.message; }
+};
+if (tokenEl.value) load();
+</script>
+</body>
+</html>

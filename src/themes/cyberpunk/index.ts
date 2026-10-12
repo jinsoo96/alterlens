@@ -19,6 +19,7 @@ export const cyberpunk: Theme = {
   post: { glow: 0.55, bloom: 1.5, chroma: 0.0018, scanlines: 0.07, grain: 0.035, vignette: 0.7, exposure: 1.35, overlayGlow: 0.9 },
   effects: { particles: { kind: 'rain', label: 'RAIN', colorSlot: 3 }, glitch: true },
   faceMods: 3,
+  aiNames: ['a glowing cyber visor over the eyes', 'glowing cybernetic eyes with circuit lines on the cheeks', 'a sleek black respirator mask over the mouth'],
   decorateFace,
   stamp,
   fonts: ['700 20px Orbitron', '400 20px "Share Tech Mono"'],

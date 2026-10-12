@@ -84,20 +84,23 @@ scripts/fetch-assets.mjs  MediaPipe wasm·모델을 public/ 으로 모음(git �
 
 표정 8종: `smile` · `mouthOpen` · `surprise` · `frown` · `pucker` · `blink` · `wink` · `cheekPuff`. 값은 0~1 로 부드럽게 한 것이고, 켜짐/꺼짐은 문턱 두 개(히스테리시스)라 깜빡이지 않는다. 가장 작은 테마는 `stylize` 한 함수와 색 조합 하나로 된다.
 
-## AI 테마 서버 (`server/`)
+## 테마 변환 서버 (`server/`)
 
-실시간 화면은 폰에서, "찍은 사진을 테마로 다시 그리기"는 생성 공급자(Higgsfield)가 한다. 공급자 키와 프롬프트는 서버에만 두고 앱은 테마 id 와 사진만 보낸다.
+실시간 화면은 폰에서, "찍은 사진을 그 테마의 진짜 그림으로"는 생성 공급자가 한다. 지금 운영 경로는 **Ailism**(협업 서버, https://ailism.memo-ora.com) 앱 API 를 거쳐 Higgsfield 로 그리는 것이고, 이 서버는 Ailism 에 붙일 기능(테마 레시피 · 장면 정보 · 채팅 다듬기 · 테마 스튜디오)을 먼저 만들어 보는 곳이다. 공급자 키·그림체 문장은 서버에만 있다.
 
 ```
-node server/index.mjs          # dist 서빙 + /api (기본 127.0.0.1:7420)
-AI_PROVIDER=mock node server/index.mjs   # 키 없이 전체 흐름 시험
-node server/cli.mjs list | on <id> | off <id> | new <id> --prompt "…" | set <id> <경로> <값> | presets
+node server/index.mjs                              # dist 서빙 + API (기본 127.0.0.1:7420, 공급자 ailism)
+AI_PROVIDER=mock STUDIO_TOKEN=… node server/index.mjs  # 키 없이 전체 흐름 시험
+node server/cli.mjs list | on <id> | off <id>
 ```
 
-- 테마 정의는 `server/themes/<id>.json` 한 파일(`enabled` 로 꼈다 켰다). 앱은 시작할 때 켜진 테마만 받아, 앱에 있는 테마에는 ✦ AI 변환을 붙이고 없는 테마는 `preview` 테마의 실시간 화면을 빌려 새로 끼운다. 앱 업데이트 없이 서버 파일만으로 테마를 더하고 뺀다.
-- API: `GET /api/themes` · `POST /api/generate?theme=&variant=&kind=photo|video&w=&h=`(본문 = 사진/영상) · `GET /api/jobs/:id` · `GET /api/media/:file`.
-- 키: `server/.env.local` 에 `HF_API_KEY_ID` · `HF_API_KEY_SECRET`(git 에 안 올라감). 없으면 AI 버튼이 숨는다.
-- 비용 가드: IP 당 시간 `AI_PER_IP_HOUR`(12), 하루 `AI_DAILY`(100), 동시 `AI_CONCURRENCY`(2).
+- **테마 = 레시피**: `server/themes/<id>.json` 에 `style`(그림체 문장) · `variants`(색 조합별 문장) · `live`(실시간 룩) · `refs`(스튜디오에서 고른 기준 그림) · `enabled`(꼈다 켰다).
+- **테마 적용**: 앱이 찍은 사진과 함께 촬영 순간 엔진이 본 **장면 정보**(인원 · 얼굴 위치 · 켜진 표정 · 쓴 장식 · 색 조합)를 보낸다. 서버가 그림체 문장 + 색 조합 + 장면 문장으로 지시문을 만든다(`server/recipe.mjs`, Ailism 한도 500자에 맞춰 장식 → 표정 순으로 줄인다). 참고 그림을 받는 공급자면 기준 그림도 같이 넘긴다.
+- **채팅 다듬기**: 결과를 보고 "머리를 길게"처럼 치면 현재 그림을 이어서 고친다. 단계(원본 → 테마 → 채팅…)가 남아 언제든 이전 단계로 돌아간다.
+- **테마 스튜디오** `/studio`(토큰 `STUDIO_TOKEN`): 그림체 문장을 쓰고 → 예시 사진으로 후보를 그려 보고 → 기준 그림을 고르고 → 켠다. 앱 업데이트 없이 테마가 늘고 준다.
+- 공급자: `ailism`(기본, 사진 1장 + 지시문 500자) · `higgsfield`(REST 키, 참고 그림 여러 장) · `mock`.
+- API: `GET /api/v1/themes` · `POST /api/v1/transforms`(multipart `image` · `themeId` · `variant` · `scene` · `w` · `h`) · `GET /api/v1/transforms/:id` · `POST …/:id/chat` `{text}` · `POST …/:id/current` `{step}` · 스튜디오 `/api/studio/*`.
+- 한도: IP 당 시간 `AI_PER_IP_HOUR`(6), 하루 `AI_DAILY`(30), 동시 `AI_CONCURRENCY`(2). 키·토큰은 `server/.env.local`(git 에 안 올라감).
 
 ## 사용 모델
 

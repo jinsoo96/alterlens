@@ -36,6 +36,7 @@ export const anime: Theme = {
   effects: { particles: { kind: 'petal', label: 'SAKURA', colorSlot: 2, color: '#ffc4d8' } },
   warp: { eyes: 0.3, slim: 0.12 },
   faceMods: 3,
+  aiNames: ['a big ribbon bow in the hair', 'a cat-ear headband', 'star-shaped hairpins'],
   decorateFace,
   stamp,
   fonts: ['800 20px "M PLUS Rounded 1c"'],

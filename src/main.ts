@@ -1,5 +1,5 @@
 import './style.css';
-import { generatePhoto, loadCatalog, type Catalog, type RemoteTheme } from './engine/ai';
+import { chat, createTransform, loadCatalog, mediaUrl, setCurrent, settle, type Catalog, type RemoteTheme, type SceneReport, type Session } from './engine/ai';
 import { Overlay } from './engine/overlay';
 import { Renderer } from './engine/renderer';
 import { Scene } from './engine/scene';
@@ -23,6 +23,9 @@ const previewImg = $<HTMLImageElement>('#preview-img');
 const debugEl = $<HTMLPreElement>('#debug');
 const aiBtn = $<HTMLButtonElement>('#ai-btn');
 const aiMsg = $<HTMLParagraphElement>('#ai-msg');
+const stepsEl = $<HTMLDivElement>('#steps');
+const chatForm = $<HTMLFormElement>('#chat');
+const chatInput = $<HTMLInputElement>('#chat-input');
 
 const LIVE_MAX = 1280;
 const PHOTO_MAX = 2048;
@@ -261,7 +264,7 @@ function frame(now: number) {
     const g = raw.getContext('2d')!;
     if (mirror) g.setTransform(-1, 0, 0, 1, w, 0);
     g.drawImage(src as CanvasImageSource, 0, 0, w, h);
-    const shot = { theme: th.id, variant: variant.id, w, h };
+    const shot = { theme: th.id, variant: variant.id, w, h, scene: sceneReport(th, variant.id, w) };
     raw.toBlob((b) => b && (lastRaw = { ...shot, blob: b }), 'image/jpeg', 0.9);
   }
 
@@ -288,9 +291,24 @@ function showDebug() {
   debugEl.textContent = lines.join('\n');
 }
 
+// 촬영 순간 엔진이 본 장면: 인원, 얼굴마다 위치·켜진 표정·쓴 장식. 서버가 AI 지시문 문장으로 바꾼다
+const REPORT_EXPR: ExprName[] = ['smile', 'wink', 'surprise', 'mouthOpen', 'frown', 'pucker'];
+function sceneReport(th: (typeof THEMES)[number], variantId: string, w: number): SceneReport {
+  return {
+    people: Math.max(scene.faces.length, scene.bodies.length),
+    faces: scene.faces.map((f) => ({
+      x: f.center.x / w,
+      expr: REPORT_EXPR.filter((n) => f.since(n) >= 0),
+      decor: th.aiNames?.length ? th.aiNames[(f.index + state.mod) % th.aiNames.length] : undefined,
+    })),
+    variant: variantId,
+  };
+}
+
 // ---------- 촬영 결과 ----------
 let lastBlob: Blob | null = null;
-let lastRaw: { blob: Blob; theme: string; variant: string; w: number; h: number } | null = null;
+let lastRaw: { blob: Blob; theme: string; variant: string; w: number; h: number; scene: SceneReport } | null = null;
+let session: Session | null = null;
 
 function fileName() {
   const d = new Date();
@@ -305,33 +323,84 @@ function showPreview(b: Blob) {
   const file = new File([b], fileName(), { type: 'image/jpeg' });
   $<HTMLButtonElement>('#share').hidden = !navigator.canShare?.({ files: [file] });
   preview.hidden = false;
+  session = null;
+  stepsEl.replaceChildren();
+  chatForm.hidden = true;
   const ai = aiThemes.get(theme().id);
-  aiBtn.hidden = !(catalog?.ai && ai?.photo);
+  aiBtn.hidden = !(catalog?.ai && ai);
   aiBtn.disabled = false;
-  aiBtn.textContent = '✦ AI로 다시 그리기';
+  aiBtn.textContent = `✦ ${theme().name} 그림으로 바꾸기`;
   aiMsg.textContent = '';
 }
 
-// 서버의 AI 테마로 찍은 사진을 다시 그린다(Higgsfield 등, 몇 초~수십 초)
+// ---------- 테마 변환 세션: 원본 → 테마 그림 → 채팅으로 이어서 고치기 ----------
+const busy = (s: Session | null) => !!s?.steps.some((st) => st.status === 'queued' || st.status === 'running');
+
+async function showStep(s: Session) {
+  const st = s.steps[s.current];
+  if (!catalog || !st?.url) return;
+  const blob = await (await fetch(mediaUrl(catalog, st.url))).blob();
+  lastBlob = blob;
+  if (previewImg.src) URL.revokeObjectURL(previewImg.src);
+  previewImg.src = URL.createObjectURL(blob);
+}
+
+function renderSession(s: Session) {
+  session = s;
+  const last = s.steps.at(-1)!;
+  const working = busy(s);
+  aiBtn.hidden = true;
+  chatForm.hidden = false;
+  chatInput.disabled = working;
+  aiMsg.textContent = working ? (last.kind === 'chat' ? `「${last.text}」 반영하는 중…` : `${s.theme.toUpperCase()} 그림으로 그리는 중…(1~3분)`) : last.status === 'failed' ? `실패: ${last.error ?? ''}` : '';
+  stepsEl.replaceChildren(
+    ...s.steps.map((st) => {
+      const b = document.createElement('button');
+      b.className = 'step' + (st.n === s.current ? ' on' : '');
+      b.disabled = st.status !== 'done' || working;
+      b.textContent = st.kind === 'source' ? '원본' : st.kind === 'theme' ? s.theme.toUpperCase() : st.status === 'failed' ? '실패' : st.text ?? '';
+      b.title = st.text ?? '';
+      b.addEventListener('click', async () => {
+        if (!catalog || !session) return;
+        renderSession(await setCurrent(catalog, session.id, st.n));
+        await showStep(session);
+      });
+      return b;
+    }),
+  );
+}
+
+async function follow(s: Session) {
+  if (!catalog) return;
+  renderSession(s);
+  const done = await settle(catalog, s, renderSession);
+  renderSession(done);
+  await showStep(done);
+}
+
 aiBtn.addEventListener('click', async () => {
   if (!catalog || !lastRaw) return;
   aiBtn.disabled = true;
-  aiBtn.textContent = 'AI가 그리는 중…';
-  aiMsg.textContent = '';
+  aiMsg.textContent = '보내는 중…';
   try {
-    const out = await generatePhoto(catalog, lastRaw.theme, lastRaw.variant, lastRaw.blob, lastRaw.w, lastRaw.h, (s) => {
-      aiMsg.textContent = s === 'queued' ? '차례를 기다리는 중' : s === 'running' ? '그리는 중' : '';
-    });
-    lastBlob = out;
-    if (previewImg.src) URL.revokeObjectURL(previewImg.src);
-    previewImg.src = URL.createObjectURL(out);
-    aiBtn.textContent = '✦ 한 번 더 그리기';
-    aiMsg.textContent = '';
+    const { blob, theme: themeId, variant, scene: sc, w, h } = lastRaw;
+    await follow(await createTransform(catalog, { image: blob, themeId, variant, scene: sc, w, h }));
   } catch (e) {
-    aiBtn.textContent = '✦ AI로 다시 그리기';
-    aiMsg.textContent = (e as Error).message;
-  } finally {
     aiBtn.disabled = false;
+    aiMsg.textContent = (e as Error).message;
+  }
+});
+
+// 결과를 보고 대화로 이어서 고친다("머리 길게", "비 오게")
+chatForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = chatInput.value.trim();
+  if (!catalog || !session || !text || busy(session)) return;
+  chatInput.value = '';
+  try {
+    await follow(await chat(catalog, session.id, text));
+  } catch (err) {
+    aiMsg.textContent = (err as Error).message;
   }
 });
 
@@ -370,7 +439,7 @@ function selectTheme(i: number) {
   state.mod = 0;
   const th = THEMES[i];
   renderer.setTheme(th);
-  themeRow.querySelectorAll('button').forEach((b, k) => b.classList.toggle('on', k === i));
+  themeRow.querySelectorAll('button').forEach((b) => b.classList.toggle('on', Number(b.dataset.i) === i));
   chips.replaceChildren(
     ...th.variants.map((v, k) => {
       const b = document.createElement('button');
@@ -389,12 +458,15 @@ function selectTheme(i: number) {
   if (state.source) ensureVision();
 }
 
+// 테마 줄: 숨은 실시간 룩(plain)은 빼고, 서버 변환이 되는 테마에 ✦
 function renderThemeRow() {
-  themeRow.hidden = THEMES.length < 2;
+  const shown = THEMES.map((th, i) => ({ th, i })).filter(({ th }) => !th.hidden);
+  themeRow.hidden = shown.length < 2;
   themeRow.replaceChildren(
-    ...THEMES.map((th, i) => {
+    ...shown.map(({ th, i }) => {
       const b = document.createElement('button');
-      b.textContent = th.name + (catalog?.ai && aiThemes.get(th.id)?.photo ? ' ✦' : '');
+      b.dataset.i = String(i);
+      b.textContent = th.name + (catalog?.ai && aiThemes.has(th.id) ? ' ✦' : '');
       b.classList.toggle('on', i === state.theme);
       b.addEventListener('click', () => selectTheme(i));
       return b;
@@ -404,15 +476,15 @@ function renderThemeRow() {
 renderThemeRow();
 selectTheme(0);
 
-// 서버 테마: 켜진 것만 온다. 앱에 있는 테마면 AI 변환을 붙이고, 없는 테마는 preview 테마의 실시간 화면을 빌려 새로 끼운다
+// 서버 테마: 켜진 것만 온다. 앱에 있는 테마면 AI 변환을 붙이고, 없는 테마는 live 테마의 실시간 화면을 빌려 새로 끼운다
 loadCatalog().then((cat) => {
   if (!cat) return;
   catalog = cat;
   for (const r of cat.themes) {
     if (!THEMES.some((t) => t.id === r.id)) {
-      const base = THEMES.find((t) => t.id === r.preview);
+      const base = THEMES.find((t) => t.id === (r.live ?? 'plain'));
       if (!base) continue;
-      THEMES.push({ ...base, id: r.id, name: r.name });
+      THEMES.push({ ...base, id: r.id, name: r.name, hidden: false });
     }
     aiThemes.set(r.id, r);
   }
